@@ -32,6 +32,19 @@ $TOKEN_COOKIE = 'artisan_console_token';
 
 $TOKEN_TTL = 12 * 60 * 60; // 12 hours
 
+// Session-scoped brute-force protection for TOTP authentication.
+// Note: deleting the PHP session cookie resets this limiter; use a shared
+// server-side store (Redis/database) keyed by IP/account for stronger protection.
+define('AUTH_MAX_ATTEMPTS', 5);
+define('AUTH_LOCK_SECONDS', 5 * 60); // 5 minutes
+
+session_start([
+    'cookie_httponly' => true,
+    'cookie_samesite' => 'Strict',
+    'cookie_secure' => !empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off',
+    'use_strict_mode' => true,
+]);
+
 /*
 |--------------------------------------------------------------------------
 | Whitelist
@@ -50,7 +63,6 @@ $WHITELIST_COMMANDS = [
     'up' => 'up',
 
     'migrate' => 'migrate',
-    'migrate --force' => 'migrate --force',
     'migrate:status' => 'migrate:status',
 
     'optimize' => 'optimize',
@@ -287,10 +299,60 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
             ], 500);
         }
 
-        if (!$google2fa->verifyKey($CONSOLE_SECRET, $verifyCode, 0)) {
+        $_SESSION['auth_attempts'] ??= 0;
+        $_SESSION['auth_locked_until'] ??= 0;
+
+        $lockedUntil = (int) $_SESSION['auth_locked_until'];
+        if ($lockedUntil > time()) {
+            $retryAfter = $lockedUntil - time();
+            header('Retry-After: ' . $retryAfter);
             jsonResponse([
                 'success' => false,
-                'output' => "Incorrect verification code.",
+                'output' =>
+                    "Too many incorrect verification codes.\r\n" .
+                    "Try again in " . formatRemaining($retryAfter) . ".",
+                'retry_after' => $retryAfter,
+                'auth' => [
+                    'authenticated' => false,
+                    'remaining' => 0,
+                    'remaining_formatted' => 'expired',
+                ],
+            ], 429);
+        }
+
+        // A previous lock has expired; begin a fresh attempt window.
+        if ($lockedUntil !== 0) {
+            $_SESSION['auth_attempts'] = 0;
+            $_SESSION['auth_locked_until'] = 0;
+        }
+
+        if (!$google2fa->verifyKey($CONSOLE_SECRET, $verifyCode, 0)) {
+            $_SESSION['auth_attempts']++;
+            $attemptsLeft = max(0, AUTH_MAX_ATTEMPTS - (int) $_SESSION['auth_attempts']);
+
+            if ($attemptsLeft === 0) {
+                $_SESSION['auth_locked_until'] = time() + AUTH_LOCK_SECONDS;
+                header('Retry-After: ' . AUTH_LOCK_SECONDS);
+                jsonResponse([
+                    'success' => false,
+                    'output' =>
+                        "Too many incorrect verification codes.\r\n" .
+                        "Authentication locked for " . formatRemaining(AUTH_LOCK_SECONDS) . ".",
+                    'retry_after' => AUTH_LOCK_SECONDS,
+                    'auth' => [
+                        'authenticated' => false,
+                        'remaining' => 0,
+                        'remaining_formatted' => 'expired',
+                    ],
+                ], 429);
+            }
+
+            jsonResponse([
+                'success' => false,
+                'output' =>
+                    "Incorrect verification code.\r\n" .
+                    "Attempts remaining: {$attemptsLeft}.",
+                'attempts_remaining' => $attemptsLeft,
                 'auth' => [
                     'authenticated' => false,
                     'remaining' => 0,
@@ -298,6 +360,11 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
                 ],
             ], 403);
         }
+
+        // Successful authentication clears the session limiter.
+        $_SESSION['auth_attempts'] = 0;
+        $_SESSION['auth_locked_until'] = 0;
+        session_regenerate_id(true);
 
         $token = createToken(
             (string) $CONSOLE_SECRET,
