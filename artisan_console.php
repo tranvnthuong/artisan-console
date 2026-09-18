@@ -1014,6 +1014,9 @@ $WHITELIST_JSON = json_encode(
         }
 
         .term-bar-title {
+            display: flex;
+            align-items: center;
+            gap: 8px;
             font-family: var(--font-mono);
             font-size: 11px;
             color: var(--text-muted);
@@ -1036,22 +1039,86 @@ $WHITELIST_JSON = json_encode(
             padding: 8px 4px 0 8px;
         }
 
+        .sidebar-toggle,
+        .sidebar-close,
+        .sidebar-backdrop {
+            display: none;
+        }
+
+        .sidebar-toggle,
+        .sidebar-close {
+            align-items: center;
+            justify-content: center;
+            width: 40px;
+            height: 40px;
+            padding: 8px;
+            background: transparent;
+            border: 1px solid var(--border);
+            color: var(--text);
+            flex-shrink: 0;
+        }
+
+        .sidebar-toggle:focus-visible,
+        .sidebar-close:focus-visible {
+            outline: 2px solid var(--accent);
+            outline-offset: 2px;
+        }
+
         @media (max-width: 760px) {
             .layout {
-                grid-template-columns: 1fr;
-                grid-template-rows: auto 1fr;
+                grid-template-columns: minmax(0, 1fr);
             }
 
             .sidebar {
-                border-right: none;
-                border-bottom: 1px solid var(--border);
-                flex-direction: row;
-                flex-wrap: wrap;
-                max-height: 40vh;
+                position: fixed;
+                inset: 0 auto 0 0;
+                width: min(320px, 85vw);
+                z-index: 1001;
+                transform: translateX(-100%);
+                visibility: hidden;
+                transition: transform 0.25s ease, visibility 0.25s;
+                overscroll-behavior: contain;
+                padding-top: max(16px, env(safe-area-inset-top));
+                padding-bottom: max(16px, env(safe-area-inset-bottom));
             }
 
-            .panel {
-                flex: 1 1 260px;
+            .sidebar.is-open {
+                transform: translateX(0);
+                visibility: visible;
+                box-shadow: 12px 0 32px rgba(0, 0, 0, 0.25);
+            }
+
+            .sidebar-toggle,
+            .sidebar-close {
+                display: inline-flex;
+            }
+
+            .sidebar-close {
+                align-self: flex-end;
+            }
+
+            .sidebar-backdrop {
+                display: block;
+                position: fixed;
+                inset: 0;
+                z-index: 1000;
+                background: rgba(0, 0, 0, 0.5);
+                opacity: 0;
+                visibility: hidden;
+                transition: opacity 0.25s ease, visibility 0.25s;
+            }
+
+            .sidebar-backdrop.is-open {
+                opacity: 1;
+                visibility: visible;
+            }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+
+            .sidebar,
+            .sidebar-backdrop {
+                transition: none;
             }
         }
 
@@ -1080,18 +1147,20 @@ $WHITELIST_JSON = json_encode(
                 </div>
             </div>
             <button class="theme-toggle" id="themeToggle" type="button">
-                <svg id="themeIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <circle cx="12" cy="12" r="4"></circle>
-                    <path
-                        d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4">
-                    </path>
-                </svg>
+                <span id="themeIcon"></span>
                 <span id="themeLabel">Dark</span>
             </button>
         </header>
 
         <div class="layout">
-            <aside class="sidebar">
+            <div class="sidebar-backdrop" id="sidebarBackdrop" aria-hidden="true"></div>
+            <aside class="sidebar" id="sidebar" aria-label="Console sidebar" tabindex="-1">
+                <button class="sidebar-close" id="sidebarClose" type="button" aria-label="Close sidebar">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"
+                        stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+                        <path d="m6 6 12 12M6 18 18 6" />
+                    </svg>
+                </button>
 
                 <div class="panel">
                     <p class="panel-title">Session</p>
@@ -1131,7 +1200,19 @@ $WHITELIST_JSON = json_encode(
 
             <div class="term-wrap">
                 <div class="term-bar">
-                    <span class="term-bar-title">console</span>
+                    <span class="term-bar-title">
+                        <button class="sidebar-toggle" id="sidebarToggle" type="button" aria-label="Open sidebar"
+                            aria-controls="sidebar" aria-expanded="false">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"
+                                fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                                stroke-linejoin="round" class="lucide lucide-menu" aria-hidden="true">
+                                <path d="M4 5h16" />
+                                <path d="M4 12h16" />
+                                <path d="M4 19h16" />
+                            </svg>
+                        </button>
+                        Console
+                    </span>
                     <button class="term-clear" id="clearBtn" type="button">clear</button>
                 </div>
                 <div id="terminal"></div>
@@ -1146,16 +1227,85 @@ $WHITELIST_JSON = json_encode(
             const CSRF_TOKEN = <?= json_encode($CSRF_TOKEN, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;
             const THEME_KEY = 'artisan-console-theme';
 
+            /* HTML SVG icons */
+            const moonSvg = '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-moon"><path d="M20.985 12.486a9 9 0 1 1-9.473-9.472c.405-.022.617.46.402.803a6 6 0 0 0 8.268 8.268c.344-.215.825-.004.803.401"/></svg>';
+            const sunSvg = '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-sun"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg>';
+
+            /* Mobile sidebar drawer */
+            const sidebar = document.getElementById('sidebar');
+            const sidebarToggle = document.getElementById('sidebarToggle');
+            const sidebarClose = document.getElementById('sidebarClose');
+            const sidebarBackdrop = document.getElementById('sidebarBackdrop');
+            const mobileLayout = window.matchMedia('(max-width: 760px)');
+            const termWrap = document.querySelector('.term-wrap');
+            const topbar = document.querySelector('.topbar');
+            let drawerOpen = false;
+
+            function setDrawer(open, restoreFocus = true) {
+                drawerOpen = mobileLayout.matches && open;
+                sidebar.classList.toggle('is-open', drawerOpen);
+                sidebarBackdrop.classList.toggle('is-open', drawerOpen);
+                sidebarToggle.setAttribute('aria-expanded', String(drawerOpen));
+                sidebarToggle.setAttribute('aria-label', drawerOpen ? 'Close sidebar' : 'Open sidebar');
+                sidebar.inert = mobileLayout.matches && !drawerOpen;
+                termWrap.inert = drawerOpen;
+                topbar.inert = drawerOpen;
+                if (drawerOpen) {
+                    sidebar.setAttribute('role', 'dialog');
+                    sidebar.setAttribute('aria-modal', 'true');
+                    sidebarClose.focus();
+                } else {
+                    sidebar.removeAttribute('role');
+                    sidebar.removeAttribute('aria-modal');
+                    if (restoreFocus && mobileLayout.matches) sidebarToggle.focus();
+                }
+            }
+
+            sidebarToggle.addEventListener('click', function () { setDrawer(!drawerOpen); });
+            sidebarClose.addEventListener('click', function () { setDrawer(false); });
+            sidebarBackdrop.addEventListener('click', function () { setDrawer(false); });
+            document.addEventListener('keydown', function (event) {
+                if (!drawerOpen) return;
+                if (event.key === 'Escape') {
+                    event.preventDefault();
+                    setDrawer(false);
+                } else if (event.key === 'Tab') {
+                    const controls = Array.from(sidebar.querySelectorAll(
+                        'button:not(:disabled), input:not(:disabled), a[href], [tabindex="0"]'
+                    )).filter(function (el) { return el.getClientRects().length > 0; });
+                    const first = controls[0];
+                    const last = controls[controls.length - 1];
+                    if (event.shiftKey && document.activeElement === first) {
+                        event.preventDefault();
+                        last.focus();
+                    } else if (!event.shiftKey && document.activeElement === last) {
+                        event.preventDefault();
+                        first.focus();
+                    }
+                }
+            });
+            mobileLayout.addEventListener('change', function () {
+                const focusInSidebar = sidebar.contains(document.activeElement);
+                setDrawer(false, false);
+                if (focusInSidebar) {
+                    if (mobileLayout.matches) sidebarToggle.focus();
+                    else sidebar.focus();
+                }
+            });
+            setDrawer(false, false);
+
             /* ------------------------------------------------------------------ */
             /* Theme                                                              */
             /* ------------------------------------------------------------------ */
             const root = document.documentElement;
             const themeToggle = document.getElementById('themeToggle');
+            const themeIcon = document.getElementById('themeIcon')
             const themeLabel = document.getElementById('themeLabel');
             let terminal = null;
 
             function applyTheme(theme) {
                 root.setAttribute('data-theme', theme);
+                themeIcon.innerHTML = theme == 'light' ? sunSvg : moonSvg;
                 themeLabel.textContent = theme === 'light' ? 'Light' : 'Dark';
                 if (terminal) {
                     terminal.options.theme = xtermTheme(theme);
