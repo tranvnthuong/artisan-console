@@ -220,10 +220,6 @@ migrate
 ```
 
 ```text
-migrate --force
-```
-
-```text
 migrate:status
 ```
 
@@ -299,7 +295,6 @@ $WHITELIST_COMMANDS = [
     'up' => 'up',
 
     'migrate' => 'migrate',
-    'migrate --force' => 'migrate --force',
     'migrate:status' => 'migrate:status',
 
     'optimize' => 'optimize',
