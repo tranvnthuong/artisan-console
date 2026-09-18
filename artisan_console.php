@@ -45,6 +45,13 @@ session_start([
     'use_strict_mode' => true,
 ]);
 
+
+// CSRF token is bound to the PHP session. All POST requests must present it.
+if (empty($_SESSION['csrf_token'])) {
+    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+}
+$CSRF_TOKEN = (string) $_SESSION['csrf_token'];
+
 /*
 |--------------------------------------------------------------------------
 | Whitelist
@@ -248,6 +255,15 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
      */
 
 } else {
+
+    // Reject cross-site POSTs before processing any command.
+    $requestCsrfToken = (string) ($_SERVER['HTTP_X_CSRF_TOKEN'] ?? '');
+    if ($requestCsrfToken === '' || !hash_equals($CSRF_TOKEN, $requestCsrfToken)) {
+        jsonResponse([
+            'success' => false,
+            'output' => 'Invalid CSRF token.',
+        ], 419);
+    }
 
     /*
     |--------------------------------------------------------------------------
@@ -1127,6 +1143,7 @@ $WHITELIST_JSON = json_encode(
     <script>
         (function () {
             const WHITELIST_COMMANDS = <?= $WHITELIST_JSON; ?>;
+            const CSRF_TOKEN = <?= json_encode($CSRF_TOKEN, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;
             const THEME_KEY = 'artisan-console-theme';
 
             /* ------------------------------------------------------------------ */
@@ -1335,7 +1352,8 @@ $WHITELIST_JSON = json_encode(
                         credentials: 'same-origin',
                         headers: {
                             'Content-Type': 'application/json',
-                            'Accept': 'application/json'
+                            'Accept': 'application/json',
+                            'X-CSRF-Token': CSRF_TOKEN
                         },
                         body: JSON.stringify({ command: cmd })
                     });
