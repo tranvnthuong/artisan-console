@@ -724,10 +724,9 @@ $WHITELIST_JSON = json_encode(
         .theme-toggle {
             display: flex;
             align-items: center;
-            gap: 8px;
             background: var(--surface-2);
             border: 1px solid var(--border);
-            border-radius: 999px;
+            border-radius: 8px;
             padding: 5px 12px;
             cursor: pointer;
             color: var(--text-muted);
@@ -1146,10 +1145,7 @@ $WHITELIST_JSON = json_encode(
                     <div class="brand-sub">Version <?= APP_VERSION ?></div>
                 </div>
             </div>
-            <button class="theme-toggle" id="themeToggle" type="button">
-                <span id="themeIcon"></span>
-                <span id="themeLabel">Dark</span>
-            </button>
+            <button class="theme-toggle" id="themeToggle" type="button"></button>
         </header>
 
         <div class="layout">
@@ -1211,7 +1207,7 @@ $WHITELIST_JSON = json_encode(
                                 <path d="M4 19h16" />
                             </svg>
                         </button>
-                        Console
+                        console
                     </span>
                     <button class="term-clear" id="clearBtn" type="button">clear</button>
                 </div>
@@ -1299,14 +1295,11 @@ $WHITELIST_JSON = json_encode(
             /* ------------------------------------------------------------------ */
             const root = document.documentElement;
             const themeToggle = document.getElementById('themeToggle');
-            const themeIcon = document.getElementById('themeIcon')
-            const themeLabel = document.getElementById('themeLabel');
             let terminal = null;
 
             function applyTheme(theme) {
                 root.setAttribute('data-theme', theme);
-                themeIcon.innerHTML = theme == 'light' ? sunSvg : moonSvg;
-                themeLabel.textContent = theme === 'light' ? 'Light' : 'Dark';
+                themeToggle.innerHTML = theme == 'light' ? sunSvg : moonSvg;
                 if (terminal) {
                     terminal.options.theme = xtermTheme(theme);
                 }
